@@ -1,0 +1,5 @@
+[db]
+ip = 192.168.184.128
+port = 9200
+mapping = {"mappings": {"doc": {"dynamic_templates": [{"strings_as_keywords": {"match_mapping_type": "string", "mapping": {"type": "keyword"}}}]}}}
+
