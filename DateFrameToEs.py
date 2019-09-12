@@ -18,4 +18,4 @@ def EsToDataFream(index_ex_obj: elsearchObj.IndexElsearchObj):
     :param index_ex_obj:要读取的el对象
     :return:
     """
-    return pandas.DataFrame(index_ex_obj.getAllWithOutId())
+    return pandas.DataFrame(index_ex_obj.getIndex())

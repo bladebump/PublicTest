@@ -103,19 +103,6 @@ class IndexElsearchObj:
         if self.es.indices.exists(index=self.index_name):
             self.es.indices.delete(index_name)
 
-    def getAllWithOutId(self, _source: list = None) -> list:
-        """
-        取得这个index下保存的所有的对象
-        :param size: 返回的数据量，默认为全部
-        :param _source: 一个列表，用于指定返回的对象有哪些属性,默认为空
-        :return: 对象的列表，没有id
-        """
-        items = self.getIndex()
-        ans = []
-        for item in items:
-            ans.append(item['_source'])
-        return ans
-
     def searchItemByDSL(self, dsl: dict, _source=None) -> list:
         """
         用quarry查询记录
