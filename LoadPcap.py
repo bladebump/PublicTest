@@ -1,6 +1,6 @@
-from scapy.layers.http import HTTPRequest, HTTPResponse
-from scapy.layers.snmp import SNMP
-from scapy.packet import Raw, Padding
+import pyshark
+import error
+import re
 from scapy.all import rdpcap
 from elsearchObj import IndexElsearchObj
 import os
@@ -16,88 +16,138 @@ error_code = {
 }
 
 
-def trans_pcap_to_dict(x):
-    """
-    读取一个pcap包
-    :param x:pcap包
-    :return: 返回一个字典
-    """
-    layers = x.layers()
-    if layers[-1] is SNMP:
-        last_layer = 'SNMP'
+# def trans_pcap_to_dict(x):
+#     """
+#     读取一个pcap包
+#     :param x:pcap包
+#     :return: 返回一个字典
+#     """
+#     layers = x.layers()
+#     if layers[-1] is SNMP:
+#         last_layer = 'SNMP'
+#     else:
+#         pcap_layers = list(map(lambda x: x._name, layers))
+#         last_layer = pcap_layers[-1] if pcap_layers[-1] not in ['Raw', 'Padding'] else pcap_layers[-2]
+#     ans = {'time': x.time, 'type': last_layer}
+#     for i in layers:
+#         t = x[i].fields
+#         if i in [HTTPRequest, HTTPResponse]:
+#             ans.update(get_http_feilds(x[i].name, t))
+#         elif i is SNMP:
+#             ans.update(get_SNMP_fields(t))
+#         elif i is Raw:
+#             ans.update(get_Raw_fields(t))
+#         elif i is Padding:
+#             ans.update(get_Padding_fields(t))
+#         else:
+#             ans.update(dict(zip([x[i].name + '_' + j for j in t.keys()],
+#                                 [str(i) if not (isinstance(i, int) or isinstance(i, float)) else i for i in
+#                                  t.values()])))
+#     return ans
+#
+#
+# def get_Raw_fields(t) -> dict:
+#     """
+#     读取Raw层的内容
+#     :param t: t是Raw层的字典内容
+#     :return: 一个字典
+#     """
+#     ans = {'Raw_load': t['load'].hex()}
+#     return ans
+#
+#
+# def get_Padding_fields(t) -> dict:
+#     """
+#     读取Padding层的内容
+#     :param t: Padding层内容的字典
+#     :return: 一个字典
+#     """
+#     ans = {'Padding_load': t['load'].hex()}
+#     return ans
+#
+#
+# def get_SNMP_fields(t) -> dict:
+#     """
+#     读取SNMP层的内容
+#     :param t: SNMP内容的字典
+#     :return: 一个字典
+#     """
+#     ans = dict()
+#     ans['SNMP_version'] = t['version'].val
+#     ans['SNMP_community'] = t['community'].val.decode()
+#     ans['SNMP_PDU'] = t['PDU'].original.hex()
+#     return ans
+#
+#
+# def get_http_feilds(name, x: dict) -> dict:
+#     """
+#     处理http层的内容
+#     :param name: 层级名称
+#     :param x: 内容
+#     :return: 字典
+#     """
+#     ans = {}
+#     for (j, k) in x.items():
+#         if isinstance(k, dict):
+#             ans.update(get_http_feilds(name, k))
+#         else:
+#             if isinstance(j, bytes):
+#                 j = j.decode()
+#             key = name + '_' + j
+#             try:
+#                 ans[key] = k.decode()
+#             except Exception as e:
+#                 ans[key] = k.hex()
+#     return ans
+
+
+def remove_fields(x):
+    partten = re.compile('flags?\.')
+    black_fields = ['data.data']
+    if partten.search(x) or x in black_fields:
+        return False
     else:
-        pcap_layers = list(map(lambda x: x._name, layers))
-        last_layer = pcap_layers[-1] if pcap_layers[-1] not in ['Raw', 'Padding'] else pcap_layers[-2]
-    ans = {'time': x.time, 'type': last_layer}
-    for i in layers:
-        t = x[i].fields
-        if i in [HTTPRequest, HTTPResponse]:
-            ans.update(get_http_feilds(x[i].name, t))
-        elif i is SNMP:
-            ans.update(get_SNMP_fields(t))
-        elif i is Raw:
-            ans.update(get_Raw_fields(t))
-        elif i is Padding:
-            ans.update(get_Padding_fields(t))
+        return True
+
+
+def trans_pcap_to_dict(x):
+    ans = {'date': x.sniff_timestamp}
+    for i in x.layers:
+        highest_layer = None
+        if i.layer_name == 'eth':
+            highest_layer = 'eth'
+            fields = ['eth.src', 'eth.dst', 'eth.type']
+        elif i.layer_name == 'ip':
+            highest_layer = 'ip'
+            fields = ['ip.src', 'ip.dst', 'ip.flags', 'ip.len', 'ip.ttl', 'ip.proto', 'ip.id', 'ip.dsfield',
+                      'ip.checksum', 'ip.version']
+        elif i.layer_name == 'tcp':
+            highest_layer = 'tcp'
+            fields = ['tcp.srcport', 'tcp.dstport', 'tcp.stream', 'tcp.len', 'tcp.seq', 'tcp.nxtseq', 'tcp.ack',
+                      'tcp.hdr_len', 'tcp.flags', 'tcp.window_size', 'tcp.checksum', 'tcp.checksum.status',
+                      'tcp.urgent_pointer', 'tcp.time_relative', 'tcp.time_delta']
+            if 'options' in i.field_names:
+                ans['tcp.options'] = i.options
+        elif i.layer_name == 'udp':
+            highest_layer = 'udp'
+            fields = ['udp.srcport', 'udp.dstport', 'udp.length', 'udp.checksum', 'udp.checksum.status', 'udp.stream',
+                      'udp.time_relative', 'udp.time_delta']
+        elif i.layer_name == 'data':
+            if 'data' in i.field_names:
+                fields = ['data', 'data.len']
+                ans.update({k.replace('.', '_'): str(i._all_fields[k]) for k in fields})
+                continue
+            elif 'tcp_segments' in i.field_names:
+                fields = ['tcp.segments', 'tcp.segment.count', 'tcp.reassembled.length']
+            else:
+                raise error.LayerNotDoneException
         else:
-            ans.update(dict(zip([x[i].name + '_' + j for j in t.keys()],
-                                [str(i) if not (isinstance(i, int) or isinstance(i, float)) else i for i in
-                                 t.values()])))
-    return ans
-
-
-def get_Raw_fields(t) -> dict:
-    """
-    读取Raw层的内容
-    :param t: t是Raw层的字典内容
-    :return: 一个字典
-    """
-    ans = {'Raw_load': t['load'].hex()}
-    return ans
-
-
-def get_Padding_fields(t) -> dict:
-    """
-    读取Padding层的内容
-    :param t: Padding层内容的字典
-    :return: 一个字典
-    """
-    ans = {'Padding_load': t['load'].hex()}
-    return ans
-
-
-def get_SNMP_fields(t) -> dict:
-    """
-    读取SNMP层的内容
-    :param t: SNMP内容的字典
-    :return: 一个字典
-    """
-    ans = dict()
-    ans['SNMP_version'] = t['version'].val
-    ans['SNMP_community'] = t['community'].val.decode()
-    ans['SNMP_PDU'] = t['PDU'].original.hex()
-    return ans
-
-
-def get_http_feilds(name, x: dict) -> dict:
-    """
-    处理http层的内容
-    :param name: 层级名称
-    :param x: 内容
-    :return: 字典
-    """
-    ans = {}
-    for (j, k) in x.items():
-        if isinstance(k, dict):
-            ans.update(get_http_feilds(name, k))
-        else:
-            if isinstance(j, bytes):
-                j = j.decode()
-            key = name + '_' + j
-            try:
-                ans[key] = k.decode()
-            except Exception as e:
-                ans[key] = k.hex()
+            partten = re.compile('flags?\.')
+            highest_layer = str(i.layer_name)
+            fields = [k for k in i._all_fields.keys() if not partten.search(k) and k != '']
+        if highest_layer:
+            ans['highest_layer'] = highest_layer
+        ans.update({k.replace('.', '_'): i._all_fields[k] for k in fields})
     return ans
 
 
@@ -107,10 +157,11 @@ def load_pcap(file):
     :param file:pcap包的路径
     :return: 一个报文构成的列表
     """
-    pcap = rdpcap(file)
+    pcap = pyshark.FileCapture(file, keep_packets=False)
     pcap_list = []
     for i in pcap:
         pcap_list.append(trans_pcap_to_dict(i))
+    pcap.close()
     return pcap_list
 
 
@@ -189,7 +240,7 @@ def load_dir(file_path, index_name, index_type):
     elobj = IndexElsearchObj(index_name=index_name, index_type=index_type)
     file_list = get_file_list(file_path)
     i, j, k = read_error()
-    for i in range(i, len(file_list[:5000]), file_size):
+    for i in range(i, len(file_list[50:1000]), file_size):
         t = []
         gc.collect()
         for j in range(i, i + file_size):
@@ -203,7 +254,9 @@ def load_dir(file_path, index_name, index_type):
             continue
         for k in range(0, len(t), save_size):
             try:
-                elobj.saveBulk(t)
+                result = elobj.saveBulk(t)
+                if not result:
+                    save_error(i, j, k)
             except Exception:
                 save_error(i, j, k)
         k = 0

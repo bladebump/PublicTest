@@ -4,5 +4,5 @@ port = 9200
 mapping = {"mappings": {"doc": {"dynamic_templates": [{"strings_as_keywords": {"match_mapping_type": "string", "mapping": {"type": "keyword"}}}]}}}
 
 [load_setting]
-file_size = 100
-save_size = 1000
+file_size = 10
+save_size = 100

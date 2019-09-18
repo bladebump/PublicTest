@@ -22,6 +22,7 @@ class IndexElsearchObj:
         self.index_name = index_name
         self.index_type = index_type
         if self.es.indices.exists(index=self.index_name) is not True:
+            # self.es.indices.create(index=index_name)
             self.es.index(index=index_name, doc_type=index_type, body=mapping)
 
     def saveItem(self, id: str, item: dict) -> bool:
@@ -132,7 +133,8 @@ class IndexElsearchObj:
             }
             Action.append(action)
             Action.append(item)
-        res = self.es.bulk(Action, doc_type=self.index_type, index=self.index_name)
+        # res = self.es.bulk(Action, doc_type=self.index_type, index=self.index_name)
+        res = {}
         if not res.get('errors'):
             return True
         else:
